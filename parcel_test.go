@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"math/rand"
 	"testing"
 	"time"
@@ -50,12 +49,16 @@ func TestAddGetDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.NotZero(t, id)
 
+	// Устанавливаем идентификатор в ожидаемый объект для сравнения
+	expectedParcel := parcel
+	expectedParcel.Number = id
+
 	// Получение
 	storedParcel, err := store.Get(id)
 	require.NoError(t, err)
-	require.Equal(t, parcel.Client, storedParcel.Client)
-	require.Equal(t, parcel.Status, storedParcel.Status)
-	require.Equal(t, parcel.Address, storedParcel.Address)
+
+	// Сравниваем структуры целиком
+	require.Equal(t, expectedParcel, storedParcel)
 
 	// Удаление
 	err = store.Delete(id)
@@ -63,7 +66,7 @@ func TestAddGetDelete(t *testing.T) {
 
 	// Проверка удаления
 	_, err = store.Get(id)
-	require.Error(t, err)
+	require.Error(t, err) // Ожидаем ошибку, поскольку посылка должна быть удалена
 }
 
 // TestSetAddress проверяет обновление адреса
@@ -121,37 +124,34 @@ func TestGetByClient(t *testing.T) {
 
 	store := NewParcelStore(db)
 
-	client := randRange.Intn(10000) // Генерация случайного ID клиента
-	var expectedParcels []Parcel
+	// Инициализация parcelMap
+	parcelMap := make(map[int]Parcel)
 
-	// Добавление нескольких посылок для одного клиента
+	// Определяем клиента для тестирования
+	clientID := rand.Intn(10000) // Генерация уникального идентификатора клиента
+
+	// Создаем и добавляем тестовые посылки
 	for i := 0; i < 3; i++ {
-		parcel := getTestParcel()
-		parcel.Client = client
-		id, err := store.Add(parcel)
-		require.NoError(t, err)
+		testParcel := getTestParcel()
+		testParcel.Client = clientID // Устанавливаем идентификатор клиента для тестовой посылки
 
-		parcel.Number = id
-		expectedParcels = append(expectedParcels, parcel)
+		// Добавляем посылку в базу данных и в parcelMap
+		id, err := store.Add(testParcel)
+		require.NoError(t, err)
+		testParcel.Number = id     // Обновляем номер посылки после добавления в БД
+		parcelMap[id] = testParcel // Сохраняем посылку в map
 	}
 
-	// Получение посылок клиента
-	storedParcels, err := store.GetByClient(client)
+	// Получаем посылки по идентификатору клиента
+	storedParcels, err := store.GetByClient(clientID)
 	require.NoError(t, err)
-	require.Len(t, storedParcels, len(expectedParcels))
 
-	// Проверка соответствия добавленных и полученных посылок
+	// Проверяем, что каждая полученная посылка находится в parcelMap
 	for _, sp := range storedParcels {
-		var found bool
-		for _, ep := range expectedParcels {
-			if sp.Number == ep.Number {
-				require.Equal(t, ep.Client, sp.Client)
-				require.Equal(t, ep.Status, sp.Status)
-				require.Equal(t, ep.Address, sp.Address)
-				found = true
-				break
-			}
-		}
-		require.True(t, found, fmt.Sprintf("Посылка с номером %d не найдена среди ожидаемых", sp.Number))
+		ep, found := parcelMap[sp.Number]
+		require.True(t, found, "Посылка с номером %d не найдена среди ожидаемых", sp.Number)
+
+		// Проверяем совпадение всех полей
+		require.Equal(t, ep, sp, "Полученная посылка не совпадает с ожидаемой")
 	}
 }
